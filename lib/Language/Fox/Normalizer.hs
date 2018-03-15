@@ -53,9 +53,15 @@ anf i (If c e1 e2 l)    = (i''', stitch bs  (If c' e1' e2' l))
     (i'' ,     e1')     = anf i'  e1
     (i''',     e2')     = anf i'' e2
 
-anf i (Tuple es l)      = error "TBD:anf:Tuple"
+anf i (Tuple es l)      = (i', stitch bs (Tuple es' l))
+  where
+    (i', bs, es')       = imms i es
 
-anf i (GetItem e1 e2 l) = error "TBD:anf:GetItem"
+anf i (GetItem e1 e2 l) = (i'', stitch bs'' (GetItem e1' e2' l))
+  where
+    bs''                = bs' ++ bs
+    (i' , bs , e1')     = imm i  e1
+    (i'', bs', e2')     = imm i' e2
 
 anf i (App f es l)      = (i', stitch bs (App f es' l))
   where
@@ -112,9 +118,17 @@ imm i (Prim2 o e1 e2 l) = (i'', bs', mkId x l)
     (i'', x)            = fresh l i'
     bs'                 = (x, (Prim2 o v1 v2 l, l)) : bs
 
-imm i (Tuple es l)      = error "TBD:imm:Tuple"
+imm i (Tuple es l)      = (i'', bs', mkId x l)
+  where
+    (i', bs, vs)        = imms  i es
+    (i'', x)            = fresh l i'
+    bs'                 = (x, (Tuple vs l, l)) : bs
 
-imm i (GetItem e1 e2 l) = error "TBD:imm:Tuple"
+imm i (GetItem e1 e2 l) = (i'', bs', mkId x l)
+  where
+    (i', bs, v2)        = imm i e2
+    (i'', x)            = fresh l i'
+    bs'                 = (x, (GetItem e1 v2 l, l)) : bs
 
 imm i (App f es l)      = (i'', bs', mkId x l)
   where

@@ -110,7 +110,12 @@ compileEnv env v@(Boolean {})    = [ compileImm env v  ]
 compileEnv env v@(Id {})         = [ compileImm env v  ]
 
 -- "clear" the stack position for 'x' after executing these instructions for e2
-compileEnv env (Let x e1 e2 _)   = error "TBD:compileEnv:Let"
+compileEnv env (Let x e1 e2 _)   = compileEnv env e1
+                                ++ [ IMov (stackVar i) (Reg EAX)]
+                                ++ compileEnv env' e2
+                                ++ [ clearStackVar i ]
+  where
+    (i, env') = pushEnv x env
 
 compileEnv env (Prim1 o v l)     = compilePrim1 l env o v
 
@@ -125,9 +130,25 @@ compileEnv env (If v e1 e2 l)    = assertType env v TBoolean
     i2s                          = compileEnv env e2
 
 compileEnv env (Tuple es l)      = tupleReserve l (tupleSize (length es)) ++  -- DO NOT MODIFY THIS LINE 
-		   		   error "TBD:compileEnv:Tuple"
+		   		   [ IMov (Reg EAX) (Reg ESI)
+                                   , IAdd (Reg ESI) (Const (i*4))
+                                   , IMov (Reg EBX) (Const (len*2))
+                                   , IMov (Sized DWordPtr (RegOffset 0 EAX)) (Reg EBX)]                                
+                                  ++ concatMap tupleCopy (zip es [0,1..]) ++
+                                   [ IOr (Reg EAX) (typeTag TTuple)]
+  where
+    len                          = length es
+    i                            = if odd len then (len+3)
+                                   else (len+2)
+    tupleCopy (e,n)              = [ IMov (Reg EBX) (immArg env e)
+                                   , IMov (pairAddr (n+2)) (Reg EBX)]
 
-compileEnv env (GetItem vE vI _) = error "TBD:compileEnv:GetItem"
+compileEnv env (GetItem vE vI _) = assertType env vE TTuple ++
+                                 [ IMov (Reg EAX) (immArg env vE)
+                                 , ISub (Reg EAX) (typeTag TTuple)
+                                 , IMov (Reg EAX) (Sized DWordPtr (RegOffset (2*(i+4)) EAX))]
+  where
+    Const i                       = immArg env vI 
 
 compileEnv env (App f vs _)      = call (DefStart f 0) (param env <$> vs)
 
@@ -144,9 +165,19 @@ compileBind env (x, e) = (env', xi, is)
 compilePrim1 :: Tag -> Env -> Prim1 -> IExp -> [Instruction]
 compilePrim1 l env Add1    v = compilePrim2 l env Plus  v (Number 1 l)
 compilePrim1 l env Sub1    v = compilePrim2 l env Minus v (Number 1 l)
-compilePrim1 l env IsNum   v = error "TBD:compilePrim1:isNum"
-compilePrim1 l env IsBool  v = error "TBD:compilePrim1:isBool"
-compilePrim1 l env IsTuple v = error "TBD:compilePrim1:isTuple"
+compilePrim1 l env IsNum   v = compileEnv env v ++
+                             [ IAnd (Reg EAX) (typeMask TNumber)
+                             , IShl (Reg EAX) (Const 31)
+                             , IOr  (Reg EAX) (typeTag TBoolean)
+                             , IXor (Reg EAX) (HexConst 0x80000000)]
+compilePrim1 l env IsBool  v = compileEnv env v ++
+                            [ IAnd (Reg EAX) (typeMask TBoolean)
+                            , IShl (Reg EAX) (Const 31)
+                            , IOr  (Reg EAX) (typeTag TBoolean)]
+compilePrim1 l env IsTuple v = compileEnv env v ++
+                            [ IAnd (Reg EAX) (typeMask TTuple)
+                            , IShl (Reg EAX) (Const 31)
+                            , IOr  (Reg EAX) (typeTag TBoolean)]
 compilePrim1 _ env Print   v = call (Builtin "print") [param env v]
 
 compilePrim2 :: Tag -> Env -> Prim2 -> IExp -> IExp -> [Instruction]
@@ -288,6 +319,7 @@ type COp = Label -> Instruction
 stackVar :: Int -> Arg
 stackVar i = RegOffset (-4 * i) EBP
 
+pairAddr n                      = Sized DWordPtr (RegOffset (4*n) EAX)
 --------------------------------------------------------------------------------
 -- | tuple Manipulation: use this to allocate space for a tuple
 --------------------------------------------------------------------------------
