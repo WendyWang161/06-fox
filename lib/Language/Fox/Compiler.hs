@@ -133,7 +133,8 @@ compileEnv env (Tuple es l)      = tupleReserve l (tupleSize (length es)) ++  --
 		   		   [ IMov (Reg EAX) (Reg ESI)
                                    , IAdd (Reg ESI) (Const (i*4))
                                    , IMov (Reg EBX) (Const (len*2))
-                                   , IMov (Sized DWordPtr (RegOffset 0 EAX)) (Reg EBX)]                                
+                                   , IMov (Sized DWordPtr (RegOffset 0 EAX)) (Reg EBX)
+                                   , IMov (pairAddr 1) (Const 0)]                                
                                   ++ concatMap tupleCopy (zip es [0,1..]) ++
                                    [ IOr (Reg EAX) (typeTag TTuple)]
   where

@@ -175,17 +175,49 @@ void print_heap(int* heap, int size) {
   }
 }
 
+/*HEPLER FUNCTION*/
+int* searchTuple(int v, int* max){
+  if(is_tuple(v)){
+    int* base = int_addr(v);
+    if(base > max){
+      max = base;
+    }
+    setGCWord(base,1);
+    for(int i = 0; i < tuple_size(base);i++){
+      max = searchTuple(base[i+2],max);
+    }
+  }
+  return max;
+}
+/*HEPLER FUNCTION*/
 
 ////////////////////////////////////////////////////////////////////////////////
 // FILL THIS IN, see documentation in 'gc.h' ///////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-int* mark( int* stack_top
-         , int* first_frame
-         , int* stack_bottom
+int* mark( int* stack_top       // ESP
+         , int* first_frame	// EBP
+         , int* stack_bottom    
          , int* heap_start)
-{
-  return heap_start;
+{ 
+  int* curr = stack_top;
+  int* ebp  = first_frame;
+  int* max  = heap_start;
+  while(curr != stack_bottom){
+    curr++;
+    if(curr == ebp){
+    // if current is EBP, update EBP, then skip it and ret
+      curr++;
+      ebp = (int*)*ebp;
+    }
+    else{
+      // if curr points to a tuple
+      // update max,set GC-word,and go through each element of tuple
+      max = searchTuple(*curr,max); 
+    }
+  }    
+  return max;
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // FILL THIS IN, see documentation in 'gc.h' ///////////////////////////////////
@@ -193,9 +225,37 @@ int* mark( int* stack_top
 int* forward( int* heap_start
             , int* max_address)
 {
-  return heap_start;
+  int* curr_base = heap_start;
+  int curr_empty = 0;
+  while(curr_base <= max_address){
+    int size = blockSize(curr_base);
+    if(curr_base[1] == 1){
+    // Tupe is live
+      int new_base_addr = (int)curr_base-curr_empty;
+      curr_base[1] += new_base_addr;   
+    }
+    else{
+    // Tuple not live
+      curr_empty += size;
+    }
+    curr_base +=  size;
+  }
+  int new_start = (int)max_address + blockSize(max_address)-curr_empty;
+  return (int*)new_start;
 }
 
+
+void redirectTuple(int* addr){
+  int* base = int_addr(*addr);
+  if(is_tuple(*addr) && (base[1]&1) == 1){
+  // if it is marked tuple 
+    addr = (int*)base[1];
+    for(int i = 0; i < tuple_size(base);i++){
+      redirectTuple(base+i+2);
+    }
+  }
+  return ;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // FILL THIS IN, see documentation in 'gc.h' ///////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -205,6 +265,20 @@ void redirect( int* stack_bottom
              , int* heap_start
              , int* max_address )
 {
+  int* curr = stack_top;
+  int* ebp  = first_frame;
+  int* max  = heap_start;
+  while(curr != stack_bottom){
+    curr++;
+    if(curr == ebp){
+    // if current is EBP, update EBP, then skip it and ret
+      curr++;
+      ebp = (int*)*ebp;
+    }
+    else{
+      redirectTuple(curr);
+    }
+  }
   return; 
 }
 
@@ -214,7 +288,24 @@ void redirect( int* stack_bottom
 void compact( int* heap_start
             , int* max_address
             , int* heap_end )
-{ 
+{
+  int* curr_base = heap_start;
+  while(curr_base <= max_address){
+    int size = tuple_size(curr_base);
+    if( (curr_base[1] & 1) == 1){
+    // if tuple is marked
+      int*  new_base = forwardAddr(curr_base);
+      curr_base[1] = 0;  
+      for (int i = 0; i< size+2; i++){
+         new_base[i] = curr_base[i];
+      }
+    }
+    curr_base += 2 + size;
+  }
+  while(curr_base < heap_end){
+    *curr_base = 0;
+    curr_base++;
+  } 
   return;
 }
 
