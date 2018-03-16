@@ -229,27 +229,29 @@ int* forward( int* heap_start
   int curr_empty = 0;
   while(curr_base <= max_address){
     int size = blockSize(curr_base);
-    if(curr_base[1] == 1){
+    if(curr_base[1] == 1 && curr_empty != 0){
     // Tupe is live
-      int new_base_addr = (int)curr_base-curr_empty;
+      int new_base_addr = (int)curr_base- 4*curr_empty;
       curr_base[1] += new_base_addr;   
     }
-    else{
+    else if(curr_base[1] != 1){
     // Tuple not live
       curr_empty += size;
     }
     curr_base +=  size;
   }
-  int new_start = (int)max_address + blockSize(max_address)-curr_empty;
+  //fprintf(stderr,"empty: %d\n",curr_empty);
+  int new_start = (int)max_address + 4 * blockSize(max_address)- 4*curr_empty;
   return (int*)new_start;
 }
 
 
 void redirectTuple(int* addr){
   int* base = int_addr(*addr);
-  if(is_tuple(*addr) && (base[1]&1) == 1){
-  // if it is marked tuple 
-    addr = (int*)base[1];
+  if(is_tuple(*addr) && (base[1]&1) == 1 && base[1]!= 1){
+  // if it is marked tuple
+    //fprintf(stderr,"redirect_addr: %p\n",(int*) *addr); 
+    *addr = base[1];
     for(int i = 0; i < tuple_size(base);i++){
       redirectTuple(base+i+2);
     }
@@ -290,21 +292,35 @@ void compact( int* heap_start
             , int* heap_end )
 {
   int* curr_base = heap_start;
+  int* clear_start;
   while(curr_base <= max_address){
-    int size = tuple_size(curr_base);
-    if( (curr_base[1] & 1) == 1){
+    int size = blockSize(curr_base);
+    //fprintf(stderr,"curr_base: %p\n",curr_base);
+    if( (curr_base[1] & 1) == 1 && curr_base[1] != 1){
     // if tuple is marked
       int*  new_base = forwardAddr(curr_base);
+      //fprintf(stderr,"new_loc: %p\n",new_base);
       curr_base[1] = 0;  
       for (int i = 0; i< size+2; i++){
-         new_base[i] = curr_base[i];
+        new_base[i] = curr_base[i];
+        if(curr_base ==  max_address){
+          clear_start = new_base + size;
+          //fprintf(stderr,"Clear clear_start: %p\n",clear_start);
+        }
       }
     }
-    curr_base += 2 + size;
+    else if(curr_base[1] == 1){
+      if(curr_base ==  max_address){
+        clear_start = curr_base + size;
+        //fprintf(stderr,"Clear clear_start: %p\n",clear_start);
+      }
+    } 
+    curr_base += size;
   }
-  while(curr_base < heap_end){
-    *curr_base = 0;
-    curr_base++;
+  while(clear_start < heap_end){
+    //fprintf(stderr,"Clear curr_base: %p\n",clear_start);
+    *clear_start = 0;
+    clear_start++;
   } 
   return;
 }
@@ -319,24 +335,31 @@ int* gc( int* stack_bottom
        , int* heap_start
        , int* heap_end )
 {
-
+  //fprintf(stderr,"--before--");
+  //print_heap(heap_start,14);
   int* max_address = mark( stack_top
                          , first_frame
                          , stack_bottom
                          , heap_start );
-
+  //fprintf(stderr,"--mark--");
+  //print_heap(heap_start,14);
   int* new_address = forward( heap_start
                             , max_address );
-
+  //fprintf(stderr,"max_address: %p\n",max_address);
+  //fprintf(stderr,"new_address: %p\n",new_address);
+  //fprintf(stderr,"--forward--");
+  //print_heap(heap_start,14);
                      redirect( stack_bottom
                              , stack_top
                              , first_frame
                              , heap_start
                              , max_address );
-
+  //fprintf(stderr,"--redirect--");
+  //print_heap(heap_start,14);
                      compact( heap_start
                             , max_address
                             , heap_end );
-
+  //fprintf(stderr,"--compact--");
+  //print_heap(heap_start,14);
   return new_address;
 }
